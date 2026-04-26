@@ -2,24 +2,24 @@ import streamlit as st
 import pandas as pd
 import json
 import os
-from streamlit_extras.stylable_container import stylable_container
+import requests
+import base64
 
-# 1. 페이지 설정
-st.set_page_config(page_title="Qplay 연상퀴즈 족보 v2.2", layout="wide")
+# --- 1. 페이지 설정 및 디자인 ---
+st.set_page_config(page_title="연상퀴즈 족보 v3.0", layout="wide")
 
-# CSS: 검색어 하이라이트 및 레이아웃 조정
 st.markdown("""
     <style>
-    .main-title { font-size: 45px !important; font-weight: bold; color: #1E1E1E; margin-bottom: -10px; }
-    .sub-title { font-size: 16px !important; color: #666666; margin-bottom: 20px; }
-    .highlight { background-color: #FFEB3B; padding: 2px 5px; border-radius: 3px; font-weight: bold; }
-    .copy-msg { font-size: 12px; color: #28a745; font-weight: bold; }
+    .main-title { font-size: 48px !important; font-weight: bold; color: #1E1E1E; margin-bottom: -10px; }
+    .sub-title { font-size: 16px !important; color: #666666; margin-bottom: 25px; }
+    .highlight { background-color: #FFEB3B; padding: 2px 5px; border-radius: 3px; font-weight: bold; color: black; }
+    div.stButton > button { width: 100%; font-weight: bold; }
     </style>
-    <p class="main-title">연상퀴즈 족보 v2.2</p>
+    <p class="main-title">연상퀴즈 족보 v3.0</p>
     <p class="sub-title">제시어로 정답을 빠르게 찾는 아카이브</p>
     """, unsafe_allow_html=True)
 
-# 2. 비밀번호 보안 (4321)
+# --- 2. 보안 및 환경 설정 ---
 if "password_correct" not in st.session_state:
     st.session_state["password_correct"] = False
 
@@ -31,23 +31,33 @@ if not st.session_state["password_correct"]:
     else:
         st.stop()
 
-# --- 비밀번호 통과 후 ---
+# GitHub 동기화를 위한 설정 (비워두면 로컬 모드로 작동)
+GITHUB_TOKEN = st.sidebar.text_input("GitHub Token (선택사항)", type="password", help="자동 저장을 원하면 토큰을 입력하세요.")
+REPO = "본인아이디/저장소이름" # 예: "kimyoong/qplay-archive"
 
-# 데이터 로드
+# --- 3. 데이터 관리 로직 ---
 DB_FILE = 'quizdata.json'
+
+@st.cache_data
 def load_data():
     if os.path.exists(DB_FILE):
         with open(DB_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
     return []
 
-data = load_data()
-df = pd.DataFrame(data)
+if 'data' not in st.session_state:
+    st.session_state['data'] = load_data()
 
-# 3. 검색창 (정답창과 밀착)
-search_query = st.text_input("🔍 검색어 입력 (자동 복사: 결과의 첫 번째 정답)", placeholder="예: 300kcal", key="search_input")
+def save_data_locally():
+    with open(DB_FILE, 'w', encoding='utf-8') as f:
+        json.dump(st.session_state['data'], f, ensure_ascii=False, indent=2)
 
-if search_query:
+# --- 4. 검색 및 자동 복사 영역 ---
+search_query = st.text_input("🔍 검색어 입력 (자동 복사: 첫 번째 결과)", placeholder="단어 사이는 공백으로 구분", key="search")
+
+df = pd.DataFrame(st.session_state['data'])
+
+if search_query and not df.empty:
     search_terms = search_query.split()
     filtered_df = df.copy()
     
@@ -57,50 +67,72 @@ if search_query:
             filtered_df['keywords'].apply(lambda x: any(term.lower() in str(k).lower() for k in x))
         ]
 
-    # 4. 정렬 로직 (1순위: 글자수 적은순, 2순위: 가나다순)
     if not filtered_df.empty:
+        # 정렬: 1순위 글자수, 2순위 가나다
         filtered_df['ans_len'] = filtered_df['answer'].str.len()
         filtered_df = filtered_df.sort_values(by=['ans_len', 'answer']).drop(columns=['ans_len'])
 
-        # 자동 복사 기능 (첫 번째 결과물)
-        top_answer = filtered_df.iloc[0]['answer']
-        
-        # 클립보드 복사를 위한 자바스크립트 삽입
+        # 최상단 정답 자동 복사 스크립트
+        top_ans = filtered_df.iloc[0]['answer']
         st.components.v1.html(f"""
             <script>
-            const text = "{top_answer}";
-            navigator.clipboard.writeText(text).then(() => {{
-                parent.postMessage("copied", "*");
-            }});
+            navigator.clipboard.writeText("{top_ans}");
             </script>
         """, height=0)
         
-        st.success(f"✅ 최상단 정답 **'{top_answer}'** 가 자동으로 복사되었습니다! (Ctrl+V 하세요)")
+        st.success(f"📋 **'{top_ans}'** 복사 완료! (결과 {len(filtered_df)}건)")
 
-        # 결과 출력
+        # 결과 리스트 출력
         for _, row in filtered_df.iterrows():
-            col_ans, col_key = st.columns([1, 4])
-            with col_ans:
+            c1, c2 = st.columns([1, 4])
+            with c1:
                 st.code(row['answer'], language=None)
-            with col_key:
-                kv_text = ", ".join(row['keywords'])
+            with c2:
+                kw_text = ", ".join(row['keywords'])
                 for term in search_terms:
-                    kv_text = kv_text.replace(term, f'<span class="highlight">{term}</span>')
-                st.markdown(f"📍 {kv_text}", unsafe_allow_html=True)
+                    kw_text = kw_text.replace(term, f'<span class="highlight">{term}</span>')
+                st.markdown(f"📍 {kw_text}", unsafe_allow_html=True)
     else:
-        st.warning("검색 결과가 없습니다.")
+        st.warning("결과가 없습니다.")
 
-# 5. 그림 2개 (가장 아래로 이동 및 크기 통일)
+# --- 5. 데이터 관리 (추가/수정/삭제) ---
+st.divider()
+with st.expander("🛠️ 족보 관리자 모드"):
+    tab1, tab2 = st.tabs(["문제 추가", "수정 및 삭제"])
+    
+    with tab1:
+        with st.form("add"):
+            a = st.text_input("정답")
+            k = st.text_input("키워드 (쉼표로 구분)")
+            if st.form_submit_button("추가"):
+                new_item = {"answer": a, "keywords": [i.strip() for i in k.split(",") if i.strip()]}
+                st.session_state['data'].append(new_item)
+                save_data_locally()
+                st.success("추가되었습니다!")
+                st.rerun()
+
+    with tab2:
+        if st.session_state['data']:
+            target = st.selectbox("수정할 문제 선택", [i['answer'] for i in st.session_state['data']])
+            idx = next(i for i, v in enumerate(st.session_state['data']) if v['answer'] == target)
+            
+            with st.form("edit"):
+                u_a = st.text_input("정답 수정", value=st.session_state['data'][idx]['answer'])
+                u_k = st.text_input("키워드 수정", value=", ".join(st.session_state['data'][idx]['keywords']))
+                col_b1, col_b2 = st.columns(2)
+                if col_b1.form_submit_button("변경 저장"):
+                    st.session_state['data'][idx] = {"answer": u_a, "keywords": [i.strip() for i in u_k.split(",")]}
+                    save_data_locally()
+                    st.rerun()
+                if col_b2.form_submit_button("🔥 삭제"):
+                    st.session_state['data'].pop(idx)
+                    save_data_locally()
+                    st.rerun()
+
+# --- 6. 하단 이미지 배치 ---
 st.write("---")
-img_col1, img_col2 = st.columns(2)
-with img_col1:
-    if os.path.exists('logo.jpg'):
-        st.image('logo.jpg', use_container_width=True)
-with img_col2:
-    if os.path.exists('deco.jpg'):
-        st.image('deco.jpg', use_container_width=True)
-
-# 6. 데이터 관리 (최하단 배치)
-with st.expander("🛠️ 데이터 추가"):
-    # (추가 기능 생략 - 이전과 동일)
-    pass
+col_img1, col_img2 = st.columns(2)
+with col_img1:
+    if os.path.exists('logo.jpg'): st.image('logo.jpg', use_container_width=True)
+with col_img2:
+    if os.path.exists('deco.jpg'): st.image('deco.jpg', use_container_width=True)

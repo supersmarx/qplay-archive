@@ -78,29 +78,26 @@ if search_query and not df.empty:
         # [강화된 자동 복사 스크립트]
         # 임시 텍스트 영역을 만들어 강제로 포커스를 주고 복사 명령을 실행합니다.
         st.components.v1.html(f"""
-            <div id="copy-area" style="opacity: 0; position: absolute; top: 0;">{top_ans}</div>
             <script>
             function copyToClipboard(text) {{
-                if (window.isSecureContext && navigator.clipboard) {{
-                    navigator.clipboard.writeText(text);
-                }} else {{
-                    const textArea = document.createElement("textarea");
-                    textArea.value = text;
-                    document.body.appendChild(textArea);
-                    textArea.select();
-                    try {{
-                        document.execCommand('copy');
-                    }} catch (err) {{
-                        console.error('복사 실패', err);
-                    }}
-                    document.body.removeChild(textArea);
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {{
+                    // 최신 방식이 막힐 경우를 대비해 고전 방식을 강제로 실행
+                    document.execCommand('copy');
+                    parent.postMessage("복사완료", "*");
+                }} catch (err) {{
+                    console.error('복사 실패', err);
                 }}
+                document.body.removeChild(textArea);
             }}
+
+            // 부모창(Streamlit)에서 엔터를 치거나 값이 바뀔 때 실행되도록 트리거
             copyToClipboard("{top_ans}");
             </script>
         """, height=0)
-        
-        st.success(f"📋 **'{top_ans}'**가 클립보드에 자동 복사되었습니다! (Ctrl+V 하세요)")
 
         # 결과 리스트 출력
         for _, row in filtered_df.iterrows():

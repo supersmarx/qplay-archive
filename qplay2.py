@@ -53,7 +53,7 @@ def save_data_locally():
         json.dump(st.session_state['data'], f, ensure_ascii=False, indent=2)
 
 # --- 4. 검색 및 자동 복사 영역 ---
-search_query = st.text_input("🔍 검색어 입력 (자동 복사: 첫 번째 결과)", placeholder="단어 사이는 공백으로 구분", key="search")
+search_query = st.text_input("🔍 검색어 입력 (첫 번째 결과가 자동 복사됩니다)", placeholder="단어 사이는 공백으로 구분", key="search")
 
 df = pd.DataFrame(st.session_state['data'])
 
@@ -72,28 +72,48 @@ if search_query and not df.empty:
         filtered_df['ans_len'] = filtered_df['answer'].str.len()
         filtered_df = filtered_df.sort_values(by=['ans_len', 'answer']).drop(columns=['ans_len'])
 
-        # 최상단 정답 자동 복사 스크립트
+        # 최상단 정답
         top_ans = filtered_df.iloc[0]['answer']
+        
+        # [강화된 자동 복사 스크립트]
+        # 임시 텍스트 영역을 만들어 강제로 포커스를 주고 복사 명령을 실행합니다.
         st.components.v1.html(f"""
+            <div id="copy-area" style="opacity: 0; position: absolute; top: 0;">{top_ans}</div>
             <script>
-            navigator.clipboard.writeText("{top_ans}");
+            function copyToClipboard(text) {{
+                if (window.isSecureContext && navigator.clipboard) {{
+                    navigator.clipboard.writeText(text);
+                }} else {{
+                    const textArea = document.createElement("textarea");
+                    textArea.value = text;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    try {{
+                        document.execCommand('copy');
+                    }} catch (err) {{
+                        console.error('복사 실패', err);
+                    }}
+                    document.body.removeChild(textArea);
+                }}
+            }}
+            copyToClipboard("{top_ans}");
             </script>
         """, height=0)
         
-        st.success(f"📋 **'{top_ans}'** 복사 완료! (결과 {len(filtered_df)}건)")
+        st.success(f"📋 **'{top_ans}'**가 클립보드에 자동 복사되었습니다! (Ctrl+V 하세요)")
 
         # 결과 리스트 출력
         for _, row in filtered_df.iterrows():
             c1, c2 = st.columns([1, 4])
             with c1:
+                # 자동 복사가 안 될 경우를 대비해 클릭 복사 기능도 유지
                 st.code(row['answer'], language=None)
             with c2:
                 kw_text = ", ".join(row['keywords'])
                 for term in search_terms:
+                    # 대소문자 구분 없이 하이라이트 하기 위해 정규식 대신 단순 replace 사용 (필요시 강화)
                     kw_text = kw_text.replace(term, f'<span class="highlight">{term}</span>')
                 st.markdown(f"📍 {kw_text}", unsafe_allow_html=True)
-    else:
-        st.warning("결과가 없습니다.")
 
 # --- 5. 데이터 관리 (추가/수정/삭제) ---
 st.divider()

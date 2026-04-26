@@ -23,7 +23,7 @@ st.markdown("""
     </style>
     <p class="main-title">연상퀴즈 족보 v2.0</p>
     <p class="sub-title">제시어로 정답을 빠르게 찾는 아카이브</p>
-    """, unsafe_allow_stdio=True)
+    """, unsafe_allow_html=True)
 
 # 2. 비밀번호 보안 기능 (접속자 제한)
 def check_password():
